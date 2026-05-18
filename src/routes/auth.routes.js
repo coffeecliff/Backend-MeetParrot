@@ -1,16 +1,33 @@
 const express = require('express');
-const AuthController = require('../controller/auth.controller');
+const authController = require('../controllers/auth.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const {validate, schemas} = require('../middleware/validation.middleware');
-const {authLimiter} = require('../middleware/rateLimit.middleware');
-const authController = require('../controller/auth.controller');
+const { validate, schemas } = require('../middleware/validation.middleware');
+const { authLimiter } = require('../middleware/rateLimit.middleware');
 
 const router = express.Router();
 
-router.post('/register', authLimiter, validate(schemas.register), authController.register);
-router.get('/profile', authMiddleware, authController.getProfile);
-router.post('/login', authLimiter, validate(schemas.login), authController.login);
-router.post('/logout', authMiddleware, authController.logout);
+// Public routes
+router.post('/register', 
+  // authLimiter,
+  validate(schemas.register),
+  authController.register
+);
 
+router.post('/login',
+  // authLimiter,
+  validate(schemas.login),
+  authController.login
+);
+
+// Protected routes
+router.post('/logout',
+  authMiddleware,
+  authController.logout
+);
+
+router.get('/profile',
+  authMiddleware,
+  authController.getProfile
+);
 
 module.exports = router;

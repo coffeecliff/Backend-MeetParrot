@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="MeetStranger API - Chat anônimo P2P" />
+    <title>MeetStranger API</title>
+    <link rel="shortcut icon" href="https://fastapi.tiangolo.com/img/favicon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #009485;
+            --primary-dark: #007a6e;
+            --secondary: #1976d2;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --error: #f44336;
+            --info: #2196f3;
+            --bg: #fafafa;
+            --surface: #ffffff;
+            --text: #263238;
+            --text-secondary: #546e7a;
+            --border: #e0e0e0;
+            --code-bg: #f5f5f5;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 2rem 0;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-bottom: 1rem;
+        }
+        
+        .version-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+        
+        .nav-tabs {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0;
+            margin: 2rem 0 0 0;
+            display: flex;
+            gap: 0;
+        }
+        
+        .nav-tab {
+            padding: 1rem 2rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        
+        .nav-tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+            background: var(--surface);
+        }
+        
+        .nav-tab:hover {
+            color: var(--primary);
+            background: #f8f9fa;
+        }
+        
+        .tab-content {
+            background: var(--surface);
+            min-height: 600px;
+        }
+        
+        .tab-pane {
+            display: none;
+            padding: 2rem;
+        }
+        
+        .tab-pane.active {
+            display: block;
+        }
+        
+        .swagger-container {
+            padding: 0;
+        }
+        
+        .info-section {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            padding: 2rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        
+        .info-card {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .info-card h3 {
+            color: var(--primary);
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+        
+        .info-card ul {
+            list-style: none;
+        }
+        
+        .info-card li {
+            padding: 0.25rem 0;
+            color: var(--text-secondary);
+        }
+        
+        .info-card li:before {
+            content: "✓";
+            color: var(--success);
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+        
+        .websocket-section {
+            background: #fff3e0;
+            border-left: 4px solid var(--warning);
+            padding: 1.5rem;
+            margin: 2rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .websocket-section h3 {
+            color: var(--warning);
+            margin-bottom: 1rem;
+        }
+        
+        .code-block {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            font-family: 'Source Code Pro', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        
+        .endpoint-list {
+            display: grid;
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+        
+        .endpoint-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: all 0.2s;
+        }
+        
+        .endpoint-item:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        
+        .endpoint-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .method-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .method-get { background: #e8f5e8; color: #2e7d32; }
+        .method-post { background: #e3f2fd; color: #1565c0; }
+        .method-put { background: #fff3e0; color: #ef6c00; }
+        .method-delete { background: #ffebee; color: #c62828; }
+        
+        .endpoint-path {
+            font-family: 'Source Code Pro', monospace;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+        
+        .endpoint-description {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+        
+        .endpoint-tags {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .tag {
+            background: #f5f5f5;
+            color: var(--text-secondary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+        
+        .quick-start {
+            background: var(--surface);
+            border-radius: 8px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+        
+        .quick-start h2 {
+            color: var(--primary);
+            margin-bottom: 1.5rem;
+        }
+        
+        .steps {
+            display: grid;
+            gap: 1.5rem;
+        }
+        
+        .step {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+        
+        .step-number {
+            background: var(--primary);
+            color: white;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        
+        .step-content h3 {
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+        
+        .step-content p {
+            color: var(--text-secondary);
+        }
+        
+        /* Swagger UI Customization */
+        .swagger-ui .topbar { display: none !important; }
+        .swagger-ui .info { margin: 0 !important; }
+        .swagger-ui .scheme-container { background: transparent !important; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>🚀 MeetStranger API</h1>
+            <p>RESTful API para aplicativo de chat anônimo P2P</p>
+            <span class="version-badge">v1.0.0</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showTab('overview')">📋 Visão Geral</button>
+            <button class="nav-tab" onclick="showTab('docs')">📚 Documentação</button>
+            <button class="nav-tab" onclick="showTab('websocket')">🔌 WebSocket</button>
+            <button class="nav-tab" onclick="showTab('examples')">💡 Exemplos</button>
+        </div>
+
+        <div class="tab-content">
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-pane active">
+                <div class="info-section">
+                    <h2>🎯 Sobre a API</h2>
+                    <p>O MeetStranger é uma API completa para chat anônimo P2P que permite conectar usuários aleatoriamente por categorias de interesse.</p>
+                    
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <h3>🔐 Autenticação</h3>
+                            <ul>
+                                <li>JWT Token Authentication</li>
+                                <li>Registro e Login seguros</li>
+                                <li>Rate limiting integrado</li>
+                                <li>Validação robusta</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="info-card">
+                            <h3>🎯 Sistema de Matching</h3>
+                            <ul>
+                                <li>Filas por categoria</li>
+                                <li>Matching automático</li>
+                                <li>Tempo real via WebSocket</li>
+                                <li>Estatísticas de fila</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="info-card">
+                            <h3>💬 Chat P2P</h3>
+                            <ul>
+                                <li>Mensagens em tempo real</li>
+                                <li>Indicadores de digitação</li>
+                                <li>Histórico de conversas</li>
+                                <li>Salas privadas</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="info-card">
+                            <h3>🛡️ Segurança</h3>
+                            <ul>
+                                <li>CORS configurado</li>
+                                <li>Headers de segurança</li>
+                                <li>Validação de entrada</li>
+                                <li>Rate limiting por IP</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quick-start">
+                    <h2>🚀 Quick Start</h2>
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <h3>Instalar e Executar</h3>
+                                <p>Clone o repositório e execute o servidor</p>
+                                <div class="code-block">npm install && npm run dev</div>
+                            </div>
+                        </div>
+                        
+                        <div class="step">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <h3>Registrar Usuário</h3>
+                                <p>Crie uma conta via POST /api/auth/register</p>
+                                <div class="code-block">curl -X POST http://localhost:3000/api/auth/register \<br>  -H "Content-Type: application/json" \<br>  -d '{"username":"user","email":"user@test.com","password":"123456"}'</div>
+                            </div>
+                        </div>
+                        
+                        <div class="step">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <h3>Conectar WebSocket</h3>
+                                <p>Conecte-se ao WebSocket para funcionalidades em tempo real</p>
+                                <div class="code-block">const socket = io('ws://localhost:3000');<br>socket.emit('authenticate', { token: 'your-jwt-token' });</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint-list">
+                    <div class="endpoint-item">
+                        <div class="endpoint-header">
+                            <span class="method-badge method-post">POST</span>
+                            <span class="endpoint-path">/api/auth/register</span>
+                        </div>
+                        <div class="endpoint-description">Registrar novo usuário no sistema</div>
+                        <div class="endpoint-tags">
+                            <span class="tag">Authentication</span>
+                            <span class="tag">Public</span>
+                        </div>
+                    </div>
+                    
+                    <div class="endpoint-item">
+                        <div class="endpoint-header">
+                            <span class="method-badge method-post">POST</span>
+                            <span class="endpoint-path">/api/auth/login</span>
+                        </div>
+                        <div class="endpoint-description">Autenticar usuário e obter JWT token</div>
+                        <div class="endpoint-tags">
+                            <span class="tag">Authentication</span>
+                            <span class="tag">Public</span>
+                        </div>
+                    </div>
+                    
+                    <div class="endpoint-item">
+                        <div class="endpoint-header">
+                            <span class="method-badge method-post">POST</span>
+                            <span class="endpoint-path">/api/matching/join</span>
+                        </div>
+                        <div class="endpoint-description">Entrar na fila de matching por categoria</div>
+                        <div class="endpoint-tags">
+                            <span class="tag">Matching</span>
+                            <span class="tag">Protected</span>
+                        </div>
+                    </div>
+                    
+                    <div class="endpoint-item">
+                        <div class="endpoint-header">
+                            <span class="method-badge method-get">GET</span>
+                            <span class="endpoint-path">/api/chat/rooms</span>
+                        </div>
+                        <div class="endpoint-description">Listar salas de chat do usuário</div>
+                        <div class="endpoint-tags">
+                            <span class="tag">Chat</span>
+                            <span class="tag">Protected</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Documentation Tab -->
+            <div id="docs" class="tab-pane">
+                <div class="swagger-container">
+                    <div id="swagger-ui"></div>
+                </div>
+            </div>
+
+            <!-- WebSocket Tab -->
+            <div id="websocket" class="tab-pane">
+                <div class="websocket-section">
+                    <h3>🔌 Conexão WebSocket</h3>
+                    <p>Para funcionalidades em tempo real (matching e chat), conecte-se ao WebSocket:</p>
+                    <div class="code-block">const socket = io('ws://localhost:3000');</div>
+                </div>
+
+                <h2>📡 Eventos Disponíveis</h2>
+                
+                <div class="endpoint-list">
+                    <div class="endpoint-item">
+                        <div class="endpoint-header">
+                            <span class="method-badge method-post">EMIT</span>
+                            <span class="endpoint-path">authenticate</span>
+                        </div>
+                        <div class="endpoint-description">Autenticar conexão WebSocket com JWT token</div>
+                        <div class="code-block">socket.emit('authenticate', { token: 'your-jwt-token' });</div>
+                    </div>
+                    
+                    <div class="endpoint-item">
+                        <div class="endpoint-header">
+                            <span class="method-badge method-post">EMIT</span>
+                            <span class="endpoint-path">join_queue</span>
+                        </div>
+                        <div class="endpoint-description">Entrar na fila de matching</div>
+                        <div class="code-block">socket.emit('join_queue', { category: 'movies' });</div>
+                    </div>
+                    
+                    <div class="endpoint-item">
+                        <div class="endpoint-header">
+                            <span class="method-badge method-get">ON</span>
+                            <span class="endpoint-path">match_found</span>
+                        </div>
+                        <div class="endpoint-description">Receber notificação de match encontrado</div>
+                        <div class="code-block">socket.on('match_found', (data) => {<br>  console.log('Match!', data.roomId);<br>});</div>
+                    </div>
+                    
+                    <div class="endpoint-item">
+                        <div class="endpoint-header">
+                            <span class="method-badge method-post">EMIT</span>
+                            <span class="endpoint-path">send_message</span>
+                        </div>
+                        <div class="endpoint-description">Enviar mensagem para sala de chat</div>
+                        <div class="code-block">socket.emit('send_message', {<br>  roomId: 'room-id',<br>  content: 'Olá!'<br>});</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Examples Tab -->
+            <div id="examples" class="tab-pane">
+                <h2>💡 Exemplos de Uso</h2>
+                
+                <div class="info-card">
+                    <h3>🔐 Autenticação Completa</h3>
+                    <div class="code-block">// 1. Registrar usuário<br>const registerResponse = await fetch('/api/auth/register', {<br>  method: 'POST',<br>  headers: { 'Content-Type': 'application/json' },<br>  body: JSON.stringify({<br>    username: 'usuario123',<br>    email: 'user@example.com',<br>    password: 'minhasenha'<br>  })<br>});<br><br>const { data } = await registerResponse.json();<br>const token = data.token;<br><br>// 2. Usar token nas requisições<br>const headers = {<br>  'Authorization': `Bearer ${token}`,<br>  'Content-Type': 'application/json'<br>};</div>
+                </div>
+                
+                <div class="info-card">
+                    <h3>🎯 Sistema de Matching</h3>
+                    <div class="code-block">// Conectar WebSocket<br>const socket = io('ws://localhost:3000');<br><br>// Autenticar<br>socket.emit('authenticate', { token });<br><br>// Entrar na fila<br>socket.emit('join_queue', { category: 'movies' });<br><br>// Aguardar match<br>socket.on('match_found', (data) => {<br>  console.log('Match encontrado!');<br>  console.log('Room ID:', data.roomId);<br>  <br>  // Entrar na sala automaticamente<br>  socket.emit('join_room', { roomId: data.roomId });<br>});</div>
+                </div>
+                
+                <div class="info-card">
+                    <h3>💬 Chat em Tempo Real</h3>
+                    <div class="code-block">// Enviar mensagem<br>socket.emit('send_message', {<br>  roomId: 'room-uuid',<br>  content: 'Olá! Como você está?'<br>});<br><br>// Receber mensagens<br>socket.on('new_message', (message) => {<br>  console.log('Nova mensagem:', message.content);<br>  console.log('De:', message.sender.username);<br>});<br><br>// Indicadores de digitação<br>socket.emit('typing_start', { roomId: 'room-uuid' });<br>socket.on('partner_typing', (data) => {<br>  if (data.isTyping) {<br>    console.log('Parceiro está digitando...');<br>  }<br>});</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5.0.0/swagger-ui-bundle.js"></script>
+    <script>
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-pane').forEach(pane => {
+                pane.classList.remove('active');
+            });
+            
+            // Remove active class from all nav tabs
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked nav tab
+            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+            
+            // Initialize Swagger UI when docs tab is shown
+            if (tabName === 'docs' && !window.swaggerInitialized) {
+                initSwagger();
+                window.swaggerInitialized = true;
+            }
+        }
+        
+        function initSwagger() {
+            SwaggerUIBundle({
+                url: '/docs/swagger.yaml',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIBundle.presets.standalone
+                ],
+                layout: "BaseLayout",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 1,
+                docExpansion: "list",
+                filter: true,
+                showExtensions: true,
+                showCommonExtensions: true,
+                tryItOutEnabled: true
+            });
+        }
+    </script>
+</body>
+</html>

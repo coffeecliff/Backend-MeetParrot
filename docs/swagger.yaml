@@ -1,0 +1,469 @@
+openapi: 3.0.3
+info:
+  title: MeetStranger API
+  description: |
+    # MeetStranger API
+    
+    **Chat anônimo P2P em tempo real**
+    
+    Esta API permite criar um sistema completo de chat anônimo onde usuários podem:
+    - Se conectar anonimamente
+    - Escolher categorias de interesse
+    - Ser pareados automaticamente
+    - Conversar em tempo real
+    
+    ## Autenticação
+    
+    Todas as rotas protegidas requerem JWT token no header:
+    ```
+    Authorization: Bearer <token>
+    ```
+    
+    ## WebSocket
+    
+    Para funcionalidades em tempo real:
+    ```javascript
+    const socket = io('ws://localhost:3000');
+    socket.emit('authenticate', { token: 'your-jwt' });
+    ```
+  version: 1.0.0
+  contact:
+    name: MeetStranger Team
+
+servers:
+  - url: http://localhost:3000/api
+    description: Desenvolvimento
+
+tags:
+  - name: auth
+    description: Autenticação e gerenciamento de usuários
+  - name: matching
+    description: Sistema de matching e filas
+  - name: chat
+    description: Salas de chat e mensagens
+  - name: health
+    description: Monitoramento e status
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Registrar usuário
+      description: Cria uma nova conta de usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  example: "usuario123"
+                email:
+                  type: string
+                  format: email
+                  example: "usuario@example.com"
+                password:
+                  type: string
+                  minLength: 6
+                  example: "minhasenha123"
+      responses:
+        '201':
+          description: Usuário criado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+                        example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Usuário já existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login de usuário
+      description: Autentica usuário e retorna JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "usuario@example.com"
+                password:
+                  type: string
+                  example: "minhasenha123"
+      responses:
+        '200':
+          description: Login realizado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout de usuário
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Logout realizado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /matching/join:
+    post:
+      tags: [matching]
+      summary: Entrar na fila de matching
+      description: Adiciona usuário à fila para uma categoria específica
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category]
+              properties:
+                category:
+                  type: string
+                  enum: [movies, games, series]
+                  example: "movies"
+      responses:
+        '200':
+          description: Adicionado à fila com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /matching/leave:
+    delete:
+      tags: [matching]
+      summary: Sair da fila de matching
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Removido da fila com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /matching/stats:
+    get:
+      tags: [matching]
+      summary: Estatísticas das filas
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Estatísticas obtidas com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      queueSize:
+                        type: object
+                        properties:
+                          movies:
+                            type: integer
+                            example: 5
+                          games:
+                            type: integer
+                            example: 3
+                          series:
+                            type: integer
+                            example: 2
+
+  /chat/rooms:
+    get:
+      tags: [chat]
+      summary: Listar salas de chat
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Salas obtidas com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      rooms:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ChatRoom'
+
+  /chat/rooms/{roomId}/messages:
+    get:
+      tags: [chat]
+      summary: Obter mensagens da sala
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Mensagens obtidas com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      messages:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ChatMessage'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags: [chat]
+      summary: Enviar mensagem
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                  example: "Olá! Como você está?"
+      responses:
+        '201':
+          description: Mensagem enviada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /health:
+    get:
+      tags: [health]
+      summary: Health Check
+      description: Verifica status do servidor e serviços
+      responses:
+        '200':
+          description: Servidor saudável
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        example: "connected"
+                      redis:
+                        type: string
+                        example: "connected"
+                      websocket:
+                        type: string
+                        example: "active"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        username:
+          type: string
+          example: "usuario123"
+        email:
+          type: string
+          format: email
+          example: "usuario@example.com"
+
+    ChatRoom:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        category:
+          type: string
+          enum: [movies, games, series]
+        status:
+          type: string
+          enum: [active, ended]
+        partner:
+          type: object
+          properties:
+            username:
+              type: string
+              example: "Anônimo_456"
+        createdAt:
+          type: string
+          format: date-time
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        isUser:
+          type: boolean
+        username:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        hasMore:
+          type: boolean
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+
+  responses:
+    ValidationError:
+      description: Erro de validação
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    UnauthorizedError:
+      description: Token inválido ou ausente
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
