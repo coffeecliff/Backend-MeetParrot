@@ -249,51 +249,25 @@ class WebSocketService {
 
         socket.on(
           'find-match',
-          async (
-            data,
-            callback = () => { }
-          ) => {
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            console.log(
-              '📥 FIND MATCH'
-            );
-
-            console.log(
-              'socket.id:',
-              socket.id
-            );
-
-            console.log(
-              'socket.userId:',
-              socket.userId
-            );
-
-            console.log(
-              'data:',
-              data
-            );
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
+          async (data, callback) => {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('📥 FIND MATCH RECEIVED');
+            console.log('socket id:', socket.id);
+            console.log('userId:', socket.userId);
+            console.log('payload:', data);
+            console.log('callback exists:', !!callback);
+            console.log('━━━━━━━━━━━━━━━━━━━━━━');
 
             try {
-
               if (!socket.userId) {
+                console.log('❌ NOT AUTHENTICATED');
 
-                console.log(
-                  '❌ USER NOT AUTHENTICATED'
-                );
-
-                callback({
-                  success: false,
-                  error:
-                    'Not authenticated',
-                });
+                if (callback) {
+                  callback({
+                    success: false,
+                    error: 'Not authenticated',
+                  });
+                }
 
                 return;
               }
@@ -304,27 +278,25 @@ class WebSocketService {
                 );
 
               console.log(
-                '📂 NORMALIZED CATEGORY:',
+                'normalized category:',
                 category
               );
 
               if (!category) {
+                console.log('❌ INVALID CATEGORY');
 
-                console.log(
-                  '❌ INVALID CATEGORY'
-                );
-
-                callback({
-                  success: false,
-                  error:
-                    'Invalid category',
-                });
+                if (callback) {
+                  callback({
+                    success: false,
+                    error: 'Invalid category',
+                  });
+                }
 
                 return;
               }
 
               console.log(
-                `🔍 USER ${socket.userId} SEARCHING IN ${category}`
+                `🔍 User ${socket.userId} searching in ${category}`
               );
 
               const result =
@@ -334,100 +306,55 @@ class WebSocketService {
                   category
                 );
 
-              console.log(
-                '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-              );
+              console.log('📦 MATCH RESULT:', result);
 
-              console.log(
-                '🎯 MATCH RESULT'
-              );
-
-              console.log(
-                JSON.stringify(
-                  result,
-                  null,
-                  2
-                )
-              );
-
-              console.log(
-                '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-              );
-
-              console.log(
-                '📤 SENDING ACK'
-              );
-
-              callback({
-                success: true,
-                data: result,
+              socket.emit('queue-joined', {
+                category,
+                position:
+                  result.queuePosition ?? 1,
               });
 
-              console.log(
-                '✅ ACK SENT'
-              );
+              console.log('📤 SENDING ACK');
 
-              socket.emit(
-                'queue-joined',
-                {
-                  category,
-                  position:
-                    result.queuePosition ??
-                    1,
-                }
-              );
+              if (callback) {
+                callback({
+                  success: true,
+                  data: result,
+                });
+              }
 
-              console.log(
-                '📤 QUEUE JOINED EMITTED'
-              );
+              console.log('✅ ACK SENT');
 
-              if (
-                result.matched
-              ) {
-
-                console.log(
-                  '🎉 MATCH FOUND'
-                );
+              if (result.matched) {
+                console.log('🎯 MATCH FOUND');
 
                 await this.notifyMatch(
                   socket,
                   result
                 );
-
               } else {
+                console.log('⌛ USER ADDED TO QUEUE');
 
-                console.log(
-                  '⌛ USER ADDED TO QUEUE'
-                );
-
-                socket.emit(
-                  'queue-status',
-                  {
-                    category,
-                    position:
-                      result.queuePosition,
-                    estimatedWait:
-                      result.estimatedWait,
-                  }
-                );
-
-                console.log(
-                  '📤 QUEUE STATUS EMITTED'
-                );
+                socket.emit('queue-status', {
+                  category,
+                  position:
+                    result.queuePosition,
+                  estimatedWait:
+                    result.estimatedWait,
+                });
               }
-
             } catch (error) {
-
               console.error(
-                '❌ FIND MATCH ERROR:',
+                '❌ find-match error:',
                 error
               );
 
-              callback({
-                success: false,
-                error:
-                  error.message,
-              });
+              if (callback) {
+                callback({
+                  success: false,
+                  error: error.message,
+                });
+              }
             }
           }
         );
@@ -981,17 +908,17 @@ class WebSocketService {
   // HELPERS
   // ─────────────────────────────────────────────────────────────
 
-  normalizeCategory(
-    category
-  ) {
+  normalizeCategory(category) {
+  if (!category) {
+    return null;
+  }
 
-    if (
-      !category
-    ) {
-      return null;
-    }
+  const normalized =
+    String(category)
+      .trim()
+      .toLowerCase();
 
-    const map = {
+  const map = {
       jogos:
         'jogos',
 
@@ -1011,11 +938,7 @@ class WebSocketService {
         'series',
     };
 
-    return (
-      map[
-      category
-      ] || null
-    );
+    return map[normalized] || null;
   }
 
   getConnectedUsersCount() {
