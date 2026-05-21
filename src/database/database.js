@@ -39,6 +39,9 @@ class Database {
       )
     `;
 
+
+    
+
     await this.pool.query(createUsersTable);
     console.log('✅ Tables created/verified');
   }
