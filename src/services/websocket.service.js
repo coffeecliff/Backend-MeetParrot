@@ -1,950 +1,798 @@
 const jwt = require('jsonwebtoken');
-const matchingService = require('./matching.service');
-const authService = require('./auth.service');
+
 const { v4: uuidv4 } = require('uuid');
 
-const HEARTBEAT_INTERVAL_MS =
-  30 * 1000;
+const matchingService = require('./matching.service');
+
+const authService = require('./auth.service');
 
 class WebSocketService {
-  constructor() {
-    this.io = null;
 
-    /**
-     * userId -> socketId
-     */
-    this.connectedUsers =
-      new Map();
-  }
+    constructor() {
 
-  // ─────────────────────────────────────────────────────────────
-  // INIT
-  // ─────────────────────────────────────────────────────────────
+        this.io = null;
 
-  initialize(io) {
-    this.io = io;
-
-    io.on(
-      'connection',
-      (socket) => {
-
-        console.log(
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-        );
-
-        console.log(
-          '🔌 SOCKET CONNECTED'
-        );
-
-        console.log(
-          'socket.id:',
-          socket.id
-        );
-
-        console.log(
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-        );
-
-        // =====================================================
-        // AUTH
-        // =====================================================
-
-        socket.on(
-          'authenticate',
-          async (
-            data,
-            callback = () => { }
-          ) => {
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            console.log(
-              '🔐 AUTHENTICATE EVENT'
-            );
-
-            console.log(
-              'socket.id:',
-              socket.id
-            );
-
-            console.log(
-              'data:',
-              data
-            );
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            try {
-
-              if (!data?.token) {
-
-                console.log(
-                  '❌ TOKEN MISSING'
-                );
-
-                callback({
-                  success: false,
-                  error:
-                    'Token is required',
-                });
-
-                return;
-              }
-
-              const decoded =
-                jwt.verify(
-                  data.token,
-                  process.env.JWT_SECRET
-                );
-
-              console.log(
-                '✅ TOKEN VALID'
-              );
-
-              console.log(
-                'decoded:',
-                decoded
-              );
-
-              socket.userId =
-                decoded.userId;
-
-              this.connectedUsers.set(
-                decoded.userId,
-                socket.id
-              );
-
-              console.log(
-                '👤 USER ATTACHED TO SOCKET'
-              );
-
-              console.log(
-                'socket.userId:',
-                socket.userId
-              );
-
-              await authService.setUserOnline(
-                decoded.userId,
-                true
-              );
-
-              socket.emit(
-                'authenticated',
-                {
-                  userId:
-                    decoded.userId,
-                }
-              );
-
-              console.log(
-                '📤 AUTHENTICATED EVENT SENT'
-              );
-
-              callback({
-                success: true,
-              });
-
-              console.log(
-                '✅ AUTH ACK SENT'
-              );
-
-            } catch (error) {
-
-              console.error(
-                '❌ AUTH FAILED:',
-                error
-              );
-
-              socket.emit(
-                'auth_error',
-                {
-                  message:
-                    'Invalid token',
-                }
-              );
-
-              callback({
-                success: false,
-                error:
-                  'Invalid token',
-              });
-            }
-          }
-        );
-
-        // =====================================================
-        // SESSION STATE
-        // =====================================================
-
-        socket.on(
-          'get-session-state',
-          (
-            callback = () => { }
-          ) => {
-
-            console.log(
-              '📦 GET SESSION STATE'
-            );
-
-            try {
-
-              if (!socket.userId) {
-
-                console.log(
-                  '❌ NOT AUTHENTICATED'
-                );
-
-                callback({
-                  success: false,
-                  error:
-                    'Not authenticated',
-                });
-
-                return;
-              }
-
-              const state =
-                matchingService.getSessionState(
-                  socket.userId
-                );
-
-              console.log(
-                '📦 SESSION STATE:',
-                state
-              );
-
-              socket.emit(
-                'session-state',
-                state
-              );
-
-              callback({
-                success: true,
-                data: state,
-              });
-
-            } catch (error) {
-
-              console.error(
-                '❌ SESSION STATE ERROR:',
-                error
-              );
-
-              callback({
-                success: false,
-                error:
-                  error.message,
-              });
-            }
-          }
-        );
-
-        // =====================================================
-        // FIND MATCH
-        // =====================================================
-
-        socket.on(
-          'find-match',
-          async (data, callback) => {
-            console.log('━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('📥 FIND MATCH RECEIVED');
-            console.log('socket id:', socket.id);
-            console.log('userId:', socket.userId);
-            console.log('payload:', data);
-            console.log('callback exists:', !!callback);
-            console.log('━━━━━━━━━━━━━━━━━━━━━━');
-
-            try {
-              if (!socket.userId) {
-                console.log('❌ NOT AUTHENTICATED');
-
-                if (callback) {
-                  callback({
-                    success: false,
-                    error: 'Not authenticated',
-                  });
-                }
-
-                return;
-              }
-
-              const category =
-                this.normalizeCategory(
-                  data?.category
-                );
-
-              console.log(
-                'normalized category:',
-                category
-              );
-
-              if (!category) {
-                console.log('❌ INVALID CATEGORY');
-
-                if (callback) {
-                  callback({
-                    success: false,
-                    error: 'Invalid category',
-                  });
-                }
-
-                return;
-              }
-
-              console.log(
-                `🔍 User ${socket.userId} searching in ${category}`
-              );
-
-              const result =
-                matchingService.joinQueue(
-                  socket.userId,
-                  socket.id,
-                  category
-                );
-
-              console.log('📦 MATCH RESULT:', result);
-
-              socket.emit('queue-joined', {
-                category,
-                position:
-                  result.queuePosition ?? 1,
-              });
-
-              console.log('📤 SENDING ACK');
-
-              if (callback) {
-                callback({
-                  success: true,
-                  data: result,
-                });
-              }
-
-              console.log('✅ ACK SENT');
-
-              if (result.matched) {
-                console.log('🎯 MATCH FOUND');
-
-                await this.notifyMatch(
-                  socket,
-                  result
-                );
-              } else {
-                console.log('⌛ USER ADDED TO QUEUE');
-
-                socket.emit('queue-status', {
-                  category,
-                  position:
-                    result.queuePosition,
-                  estimatedWait:
-                    result.estimatedWait,
-                });
-              }
-            } catch (error) {
-              console.error(
-                '❌ find-match error:',
-                error
-              );
-
-              if (callback) {
-                callback({
-                  success: false,
-                  error: error.message,
-                });
-              }
-            }
-          }
-        );
-
-        // =====================================================
-        // JOIN ROOM
-        // =====================================================
-
-        socket.on(
-          'join-room',
-          (
-            data,
-            callback = () => { }
-          ) => {
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            console.log(
-              '🚪 JOIN ROOM'
-            );
-
-            console.log(
-              'socket.userId:',
-              socket.userId
-            );
-
-            console.log(
-              'data:',
-              data
-            );
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            try {
-
-              if (!socket.userId) {
-
-                callback({
-                  success: false,
-                  error:
-                    'Not authenticated',
-                });
-
-                return;
-              }
-
-              const roomId =
-                data?.roomId;
-
-              console.log(
-                '🏠 ROOM ID:',
-                roomId
-              );
-
-              if (!roomId) {
-
-                callback({
-                  success: false,
-                  error:
-                    'Room id missing',
-                });
-
-                return;
-              }
-
-              const room =
-                matchingService.getRoom(
-                  roomId
-                );
-
-              console.log(
-                '🏠 ROOM:',
-                room
-              );
-
-              if (!room) {
-
-                console.log(
-                  '❌ ROOM NOT FOUND'
-                );
-
-                callback({
-                  success: false,
-                  error:
-                    'Room not found',
-                });
-
-                return;
-              }
-
-              const allowed =
-                room.user1Id ===
-                socket.userId ||
-                room.user2Id ===
-                socket.userId;
-
-              console.log(
-                '🔐 ROOM ACCESS:',
-                allowed
-              );
-
-              if (!allowed) {
-
-                callback({
-                  success: false,
-                  error:
-                    'Access denied',
-                });
-
-                return;
-              }
-
-              socket.join(
-                roomId
-              );
-
-              socket.currentRoom =
-                roomId;
-
-              matchingService.updateRoomActivity(
-                roomId
-              );
-
-              socket.emit(
-                'room-joined',
-                {
-                  roomId,
-                }
-              );
-
-              callback({
-                success: true,
-                data: {
-                  roomId,
-                },
-              });
-
-              console.log(
-                `✅ USER ${socket.userId} JOINED ROOM ${roomId}`
-              );
-
-            } catch (error) {
-
-              console.error(
-                '❌ JOIN ROOM ERROR:',
-                error
-              );
-
-              callback({
-                success: false,
-                error:
-                  error.message,
-              });
-            }
-          }
-        );
-
-        // =====================================================
-        // SEND MESSAGE
-        // =====================================================
-
-        socket.on(
-          'send-message',
-          async (
-            data,
-            callback = () => { }
-          ) => {
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            console.log(
-              '💬 SEND MESSAGE'
-            );
-
-            console.log(
-              'socket.userId:',
-              socket.userId
-            );
-
-            console.log(
-              'socket.currentRoom:',
-              socket.currentRoom
-            );
-
-            console.log(
-              'data:',
-              data
-            );
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            try {
-
-              if (!socket.userId) {
-
-                callback({
-                  success: false,
-                  error:
-                    'Not authenticated',
-                });
-
-                return;
-              }
-
-              if (
-                !socket.currentRoom
-              ) {
-
-                callback({
-                  success: false,
-                  error:
-                    'No active room',
-                });
-
-                return;
-              }
-
-              const messageText =
-                data?.message?.trim();
-
-              console.log(
-                '📝 MESSAGE:',
-                messageText
-              );
-
-              if (!messageText) {
-
-                callback({
-                  success: false,
-                  error:
-                    'Message is empty',
-                });
-
-                return;
-              }
-
-              const sender =
-                await authService.getUserById(
-                  socket.userId
-                );
-
-              const message = {
-                id: uuidv4(),
-                roomId:
-                  socket.currentRoom,
-                senderId:
-                  socket.userId,
-                username:
-                  sender?.username ||
-                  'Usuário',
-                message:
-                  messageText,
-                timestamp:
-                  new Date().toISOString(),
-              };
-
-              console.log(
-                '📤 EMITTING MESSAGE:',
-                message
-              );
-
-              matchingService.updateRoomActivity(
-                socket.currentRoom
-              );
-
-              socket
-                .to(
-                  socket.currentRoom
-                )
-                .emit(
-                  'new-message',
-                  message
-                );
-
-              callback({
-                success: true,
-                data: message,
-              });
-
-              console.log(
-                '✅ MESSAGE SENT'
-              );
-
-            } catch (error) {
-
-              console.error(
-                '❌ SEND MESSAGE ERROR:',
-                error
-              );
-
-              callback({
-                success: false,
-                error:
-                  error.message,
-              });
-            }
-          }
-        );
-
-        // =====================================================
-        // DISCONNECT
-        // =====================================================
-
-        socket.on(
-          'disconnect',
-          async (
-            reason
-          ) => {
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            console.log(
-              '🔌 DISCONNECT'
-            );
-
-            console.log(
-              'socket.id:',
-              socket.id
-            );
-
-            console.log(
-              'socket.userId:',
-              socket.userId
-            );
-
-            console.log(
-              'reason:',
-              reason
-            );
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            try {
-
-              if (
-                !socket.userId
-              ) {
-                return;
-              }
-
-              this.connectedUsers.delete(
-                socket.userId
-              );
-
-              await authService.setUserOnline(
-                socket.userId,
-                false
-              );
-
-              matchingService.leaveAllQueues(
-                socket.userId
-              );
-
-              await this.handleLeaveRoom(
-                socket,
-                socket.currentRoom,
-                true
-              );
-
-            } catch (error) {
-
-              console.error(
-                '❌ DISCONNECT ERROR:',
-                error
-              );
-            }
-          }
-        );
-      }
-    );
-
-    // =========================================================
-    // CLEANUP
-    // =========================================================
-
-    setInterval(() => {
-
-      const removedRooms =
-        matchingService.cleanupInactiveRooms();
-
-      if (
-        removedRooms.length > 0
-      ) {
-
-        console.log(
-          `🧹 REMOVED INACTIVE ROOMS: ${removedRooms.length}`
-        );
-      }
-
-    }, 5 * 60 * 1000);
-
-    setInterval(() => {
-
-      const expiredItems =
-        matchingService.cleanupExpiredQueues();
-
-      expiredItems.forEach(
-        (
-          item
-        ) => {
-
-          const userSocket =
-            io.sockets.sockets.get(
-              item.socketId
-            );
-
-          if (!userSocket) {
-            return;
-          }
-
-          userSocket.emit(
-            'queue-timeout',
-            {
-              message:
-                'Tempo de fila expirado',
-              category:
-                item.category,
-            }
-          );
-
-          console.log(
-            `⏰ QUEUE TIMEOUT: ${item.userId}`
-          );
-        }
-      );
-
-    }, 60 * 1000);
-
-    setInterval(() => {
-
-      io.emit(
-        'ping'
-      );
-
-    }, HEARTBEAT_INTERVAL_MS);
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // MATCH NOTIFICATION
-  // ─────────────────────────────────────────────────────────────
-
-  async notifyMatch(
-    socket,
-    result
-  ) {
-
-    console.log(
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-    );
-
-    console.log(
-      '🎉 NOTIFY MATCH'
-    );
-
-    console.log(
-      'result:',
-      result
-    );
-
-    console.log(
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━'
-    );
-
-    const partnerSocket =
-      this.io.sockets.sockets.get(
-        result.partnerSocketId
-      );
-
-    console.log(
-      '👥 PARTNER SOCKET:',
-      !!partnerSocket
-    );
-
-    const currentUser =
-      await authService.getUserById(
-        socket.userId
-      );
-
-    const partnerUser =
-      await authService.getUserById(
-        result.partnerId
-      );
-
-    console.log(
-      '📤 EMITTING MATCH TO CURRENT USER'
-    );
-
-    socket.emit(
-      'match-found',
-      {
-        roomId:
-          result.roomId,
-        category:
-          result.category,
-        partner: {
-          id:
-            partnerUser?.id,
-          username:
-            partnerUser?.username ||
-            'Usuário',
-          email:
-            partnerUser?.email ||
-            '',
-        },
-      }
-    );
-
-    if (
-      partnerSocket
-    ) {
-
-      console.log(
-        '📤 EMITTING MATCH TO PARTNER'
-      );
-
-      partnerSocket.emit(
-        'match-found',
-        {
-          roomId:
-            result.roomId,
-          category:
-            result.category,
-          partner: {
-            id:
-              currentUser?.id,
-            username:
-              currentUser?.username ||
-              'Usuário',
-            email:
-              currentUser?.email ||
-              '',
-          },
-        }
-      );
+        this.connectedUsers = new Map();
     }
-  }
 
-  // ─────────────────────────────────────────────────────────────
-  // HELPERS
-  // ─────────────────────────────────────────────────────────────
+    initialize(io) {
 
-  normalizeCategory(category) {
-  if (!category) {
-    return null;
-  }
+        this.io = io;
 
-  const normalized =
-    String(category)
-      .trim()
-      .toLowerCase();
+        io.on('connection', (socket) => {
 
-  const map = {
-      jogos:
-        'jogos',
+            console.log(
+                '[WS] New connection:',
+                socket.id
+            );
 
-      games:
-        'jogos',
+            // =========================
+            // AUTHENTICATION
+            // =========================
 
-      filmes:
-        'filmes',
+            socket.on(
+                'authenticate',
+                async ({ token } = {}) => {
 
-      movies:
-        'filmes',
+                    try {
 
-      series:
-        'series',
+                        if (!token) {
 
-      shows:
-        'series',
-    };
+                            socket.emit(
+                                'auth-error',
+                                {
+                                    error:
+                                        'Token missing',
+                                }
+                            );
 
-    return map[normalized] || null;
-  }
+                            return;
+                        }
 
-  getConnectedUsersCount() {
-    return this.connectedUsers.size;
-  }
+                        const decoded =
+                            jwt.verify(
+                                token,
+                                process.env.JWT_SECRET
+                            );
+
+                        socket.userId =
+                            decoded.userId;
+
+                        this.connectedUsers.set(
+                            decoded.userId,
+                            socket.id
+                        );
+
+                        await authService.setUserOnline(
+                            decoded.userId,
+                            true
+                        );
+
+                        console.log(
+                            '[WS] Authenticated:',
+                            decoded.userId
+                        );
+
+                        socket.emit(
+                            'authenticated',
+                            {
+                                userId:
+                                    decoded.userId,
+                            }
+                        );
+
+                    } catch (error) {
+
+                        console.error(
+                            '[WS] Auth error:',
+                            error
+                        );
+
+                        socket.emit(
+                            'auth-error',
+                            {
+                                error:
+                                    'Invalid token',
+                            }
+                        );
+                    }
+                }
+            );
+
+            // =========================
+            // FIND MATCH
+            // =========================
+
+            socket.on(
+                'find-match',
+                async ({ category } = {}) => {
+
+                    try {
+
+                        console.log(
+                            '[MATCH] Find match:',
+                            socket.userId,
+                            category
+                        );
+
+                        // auth check
+                        if (!socket.userId) {
+
+                            socket.emit(
+                                'error',
+                                {
+                                    error:
+                                        'Not authenticated',
+                                }
+                            );
+
+                            return;
+                        }
+
+                        // category validation
+                        if (
+                            !matchingService.CATEGORIES.includes(
+                                category
+                            )
+                        ) {
+
+                            socket.emit(
+                                'error',
+                                {
+                                    error:
+                                        'Invalid category',
+                                }
+                            );
+
+                            return;
+                        }
+
+                        // impede múltiplos matchs
+                        if (
+                            socket.currentRoom
+                        ) {
+
+                            socket.emit(
+                                'error',
+                                {
+                                    error:
+                                        'Already in room',
+                                }
+                            );
+
+                            return;
+                        }
+
+                        // remove usuário de filas anteriores
+                        matchingService.leaveAllQueues(
+                            socket.userId
+                        );
+
+                        const result =
+                            matchingService.joinQueue(
+                                socket.userId,
+                                socket.id,
+                                category
+                            );
+
+                        // =========================
+                        // MATCH FOUND
+                        // =========================
+
+                        if (
+                            result.matched
+                        ) {
+
+                            console.log(
+                                '[MATCH] Room created:',
+                                result.roomId
+                            );
+
+                            const user1 =
+                                await authService.getUserById(
+                                    socket.userId
+                                );
+
+                            const user2 =
+                                await authService.getUserById(
+                                    result.partnerId
+                                );
+
+                            const partnerSocket =
+                                io.sockets.sockets.get(
+                                    result.partnerSocketId
+                                );
+
+                            if (
+                                !partnerSocket ||
+                                !partnerSocket.userId ||
+                                String(partnerSocket.userId) ===
+                                    String(socket.userId)
+                            ) {
+
+                                console.warn(
+                                    '[MATCH] Ignoring stale/self partner:',
+                                    result.partnerId
+                                );
+
+                                matchingService.leaveRoom(
+                                    result.roomId,
+                                    socket.userId
+                                );
+
+                                const retry =
+                                    matchingService.joinQueue(
+                                        socket.userId,
+                                        socket.id,
+                                        category
+                                    );
+
+                                socket.emit(
+                                    'queue-status',
+                                    {
+                                        category:
+                                            retry.category,
+                                        position:
+                                            retry.queuePosition,
+                                        estimatedWait:
+                                            retry.estimatedWait,
+                                    }
+                                );
+
+                                return;
+                            }
+
+                            // entra AUTOMATICAMENTE na room
+                            socket.join(
+                                result.roomId
+                            );
+
+                            socket.currentRoom =
+                                result.roomId;
+
+                            partnerSocket.join(
+                                result.roomId
+                            );
+
+                            partnerSocket.currentRoom =
+                                result.roomId;
+
+                            // emite match
+                            socket.emit(
+                                'match-found',
+                                {
+                                    roomId:
+                                        result.roomId,
+
+                                    category:
+                                        result.category,
+
+                                    partner: {
+                                        username:
+                                            user2
+                                                ?.username ||
+                                            'User',
+                                    },
+                                }
+                            );
+
+                            partnerSocket.emit(
+                                'match-found',
+                                {
+                                    roomId:
+                                        result.roomId,
+
+                                    category:
+                                        result.category,
+
+                                    partner: {
+                                        username:
+                                            user1
+                                                ?.username ||
+                                            'User',
+                                    },
+                                }
+                            );
+
+                            return;
+                        }
+
+                        // =========================
+                        // WAITING QUEUE
+                        // =========================
+
+                        socket.emit(
+                            'queue-status',
+                            {
+                                category:
+                                    result.category,
+
+                                position:
+                                    result.queuePosition,
+
+                                estimatedWait:
+                                    result.estimatedWait,
+                            }
+                        );
+
+                    } catch (error) {
+
+                        console.error(
+                            '[MATCH] Error:',
+                            error
+                        );
+
+                        socket.emit(
+                            'error',
+                            {
+                                error:
+                                    'Matchmaking failed',
+                            }
+                        );
+                    }
+                }
+            );
+
+            // =========================
+            // CANCEL MATCHING
+            // =========================
+
+            socket.on(
+                'cancel-matching',
+                () => {
+
+                    if (!socket.userId)
+                        return;
+
+                    console.log(
+                        '[MATCH] Cancel matching:',
+                        socket.userId
+                    );
+
+                    matchingService.leaveAllQueues(
+                        socket.userId
+                    );
+
+                    socket.emit(
+                        'matching-cancelled',
+                        {
+                            success: true,
+                        }
+                    );
+                }
+            );
+
+            // =========================
+            // SEND MESSAGE
+            // =========================
+
+           // =========================
+// SEND MESSAGE
+// =========================
+        
+            socket.on(
+                'send-message',
+                async (
+                    {
+                        roomId,
+                        text,
+                    } = {}
+                ) => {
+                
+                    try {
+                    
+                        // valida payload
+                        if (
+                            !roomId ||
+                            !text ||
+                            !socket.userId
+                        ) {
+                            return;
+                        }
+                    
+                        // busca sala
+                        const room =
+                            matchingService.getRoom(
+                                roomId
+                            );
+                        
+                        // sala inexistente
+                        if (!room) {
+                        
+                            socket.emit(
+                                'error',
+                                {
+                                    error:
+                                        'Room not found',
+                                }
+                            );
+                        
+                            return;
+                        }
+                    
+                        // =========================
+                        // AUTHORIZATION VALIDATION
+                        // =========================
+                    
+                        const isUserInRoom =
+                    
+                            room.user1Id ===
+                                socket.userId ||
+                    
+                            room.user2Id ===
+                                socket.userId;
+                    
+                        if (!isUserInRoom) {
+                        
+                            console.warn(
+                                '[CHAT] Unauthorized room access:',
+                                socket.userId,
+                                roomId
+                            );
+                        
+                            socket.emit(
+                                'error',
+                                {
+                                    error:
+                                        'Not authorized for this room',
+                                }
+                            );
+                        
+                            return;
+                        }
+                    
+                        // atualiza atividade da sala
+                        room.lastActivity =
+                            new Date();
+                    
+                        // busca remetente
+                        const sender =
+                            await authService.getUserById(
+                                socket.userId
+                            );
+                        
+                        console.log(
+                            '[CHAT] Message:',
+                            text
+                        );
+                    
+                        // envia mensagem
+                        this.io
+                            .to(roomId)
+                            .emit(
+                                'new-message',
+                                {
+                                    id:
+                                        uuidv4(),
+                                
+                                    text:
+                                        text.trim(),
+                                
+                                    senderId:
+                                        socket.userId,
+                                
+                                    username:
+                                        sender?.username ||
+                                        'User',
+                                
+                                    timestamp:
+                                        new Date(),
+                                }
+                            );
+                        
+                    } catch (error) {
+                    
+                        console.error(
+                            '[CHAT] Error:',
+                            error
+                        );
+                    
+                        socket.emit(
+                            'error',
+                            {
+                                error:
+                                    'Failed to send message',
+                            }
+                        );
+                    }
+                }
+            );
+            // =========================
+            // TYPING
+            // =========================
+
+            socket.on(
+                'typing-start',
+                () => {
+
+                    if (
+                        socket.currentRoom
+                    ) {
+
+                        socket
+                            .to(
+                                socket.currentRoom
+                            )
+                            .emit(
+                                'partner-typing',
+                                {
+                                    isTyping:
+                                        true,
+                                }
+                            );
+                    }
+                }
+            );
+
+            socket.on(
+                'typing-stop',
+                () => {
+
+                    if (
+                        socket.currentRoom
+                    ) {
+
+                        socket
+                            .to(
+                                socket.currentRoom
+                            )
+                            .emit(
+                                'partner-typing',
+                                {
+                                    isTyping:
+                                        false,
+                                }
+                            );
+                    }
+                }
+            );
+
+            // =========================
+            // LEAVE ROOM
+            // =========================
+
+            socket.on(
+                'leave-room',
+                ({ roomId } = {}) => {
+
+                    console.log(
+                        '[ROOM] Leave:',
+                        roomId
+                    );
+
+                    this.handleLeaveRoom(
+                        socket,
+                        roomId
+                    );
+                }
+            );
+
+            // =========================
+            // DISCONNECT
+            // =========================
+
+            socket.on(
+                'disconnect',
+                async () => {
+
+                    console.log(
+                        '[WS] Disconnect:',
+                        socket.userId
+                    );
+                    if (
+                        !socket.userId
+                    ) {
+                        return;
+                    }
+                    await authService.setUserOnline(
+                        socket.userId,
+                        false
+                    );
+                    matchingService.leaveAllQueues(
+                        socket.userId
+                    );
+                    this.connectedUsers.delete(
+                        socket.userId
+                    );
+                    this.handleLeaveRoom(
+                        socket,
+                        socket.currentRoom,
+                        true
+                    );
+                }
+            );
+        });
+        // =========================
+        // CLEANUP
+        // =========================
+        setInterval(() => {
+            matchingService.cleanupInactiveRooms();
+        }, 5 * 60 * 1000);
+    }
+    // =========================
+    // LEAVE ROOM
+    // =========================
+    handleLeaveRoom(
+        socket,
+        roomId = null,
+        isDisconnect = false
+    ) {
+        const targetRoom =
+            roomId ||
+            socket.currentRoom;
+        if (!targetRoom) {
+            return;
+        }
+        const roomData =
+            matchingService.leaveRoom(
+                targetRoom,
+                socket.userId
+            );
+        if (roomData) {
+            socket
+                .to(targetRoom)
+                .emit(
+                    'partner-left',
+                    {
+                        roomId:
+                            targetRoom,
+                        message:
+                            isDisconnect
+                                ? 'Partner disconnected'
+                                : 'Partner left',
+                    }
+                );
+            this.requeuePartner(
+                roomData
+            );
+        }
+        socket.leave(targetRoom);
+        socket.currentRoom = null;
+    }
+    // =========================
+    // REQUEUE PARTNER
+    // =========================
+    async requeuePartner(
+        roomData
+    ) {
+        if (
+            !roomData.partnerSocketId
+        ) {
+            return;
+        }
+        const partnerSocket =
+            this.io.sockets.sockets.get(
+                roomData.partnerSocketId
+            );
+        if (!partnerSocket) {
+            return;
+        }
+        partnerSocket.currentRoom =
+            null;
+        partnerSocket.emit(
+            'partner-disconnected',
+            {
+                message:
+                    'Finding another user...',
+            }
+        );
+        setTimeout(async () => {
+            if (
+                !partnerSocket.userId
+            ) {
+                return;
+            }
+            const result =
+                matchingService.joinQueue(
+                    partnerSocket.userId,
+                    partnerSocket.id,
+                    roomData.category
+                );
+            if (result.matched) {
+                const newPartnerSocket =
+                    this.io.sockets.sockets.get(
+                        result.partnerSocketId
+                    );
+
+                if (
+                    !newPartnerSocket ||
+                    !newPartnerSocket.userId ||
+                    String(newPartnerSocket.userId) ===
+                        String(partnerSocket.userId)
+                ) {
+
+                    console.warn(
+                        '[MATCH] Requeue ignored stale/self partner:',
+                        result.partnerId
+                    );
+
+                    matchingService.leaveRoom(
+                        result.roomId,
+                        partnerSocket.userId
+                    );
+
+                    const retry =
+                        matchingService.joinQueue(
+                            partnerSocket.userId,
+                            partnerSocket.id,
+                            roomData.category
+                        );
+
+                    partnerSocket.emit(
+                        'queue-status',
+                        {
+                            category:
+                                retry.category,
+                            position:
+                                retry.queuePosition,
+                            estimatedWait:
+                                retry.estimatedWait,
+                        }
+                    );
+
+                    return;
+                }
+
+                partnerSocket.join(
+                    result.roomId
+                );
+                partnerSocket.currentRoom =
+                    result.roomId;
+                newPartnerSocket.join(
+                    result.roomId
+                );
+                newPartnerSocket.currentRoom =
+                    result.roomId;
+                partnerSocket.emit(
+                    'match-found',
+                    {
+                        roomId:
+                            result.roomId,
+                        category:
+                            result.category,
+                        partner: {
+                            username:
+                                'User',
+                        },
+                    }
+                );
+                newPartnerSocket.emit(
+                    'match-found',
+                    {
+                        roomId:
+                            result.roomId,
+                        category:
+                            result.category,
+                        partner: {
+                            username:
+                                'User',
+                        },
+                    }
+                );
+                return;
+            }
+            partnerSocket.emit(
+                'queue-status',
+                {
+                    category:
+                        result.category,
+                    position:
+                        result.queuePosition,
+                    estimatedWait:
+                        result.estimatedWait,
+                }
+            );
+        }, 1000);
+    }
+    // =========================
+    // STATS
+    // =========================
+    getConnectedUsersCount() {
+        return this.connectedUsers.size;
+    }
+    isInitialized() {
+        return Boolean(this.io);
+    }
 }
-
 module.exports =
-  new WebSocketService();
+    new WebSocketService();

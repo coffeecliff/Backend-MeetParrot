@@ -8,13 +8,13 @@ const router = express.Router();
 
 // Public routes
 router.post('/register', 
-  // authLimiter,
+  authLimiter,
   validate(schemas.register),
   authController.register
 );
 
 router.post('/login',
-  // authLimiter,
+  authLimiter,
   validate(schemas.login),
   authController.login
 );

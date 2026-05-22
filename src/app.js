@@ -2,6 +2,15 @@
 // IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
 // ===============================
 // Carrega variáveis de ambiente do arquivo .env
+// Validação obrigatória de variáveis de ambiente críticas
+const REQUIRED_ENV_VARS = ['JWT_SECRET', 'DATABASE_URL'];
+
+const missingVars = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
+
+if (missingVars.length > 0) {
+    console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
+    process.exit(1);
+}
 require('dotenv').config();
 // Importação dos módulos principais da aplicação
 const express = require('express');          // Framework HTTP
@@ -18,6 +27,21 @@ const authRoutes = require('./routes/auth.routes');         // Rotas de autentic
 const chatRoutes = require('./routes/chat.routes');         // Rotas de chat
 const matchingRoutes = require('./routes/matching.routes'); // Rotas de matching
 const websocketService = require('./services/websocket.service'); // Serviço de WebSocket
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:8081,http://localhost:19006,http://localhost:3000')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+const isOriginAllowed = (origin) => {
+  return !origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin);
+};
+
+const corsOptions = {
+  origin(origin, callback) {
+    callback(null, isOriginAllowed(origin));
+  }
+};
 // ===============================
 // INICIALIZAÇÃO DO SERVIDOR
 // ===============================
@@ -25,10 +49,12 @@ const websocketService = require('./services/websocket.service'); // Serviço de
 const app = express();
 // Cria o servidor HTTP baseado no Express
 const server = http.createServer(app);
-// Inicializa o Socket.IO com configuração de CORS aberta
+// Inicializa o Socket.IO com CORS controlado por ALLOWED_ORIGINS
 const io = socketIo(server, {
   cors: {
-    origin: "*",
+    origin(origin, callback) {
+      callback(null, isOriginAllowed(origin));
+    },
     methods: ["GET", "POST"]
   }
 });
@@ -47,10 +73,7 @@ app.set('trust proxy', 1);
 // ===============================
 // Protege a aplicação com headers de segurança
 app.use(helmet());
-// Habilita CORS para qualquer origem
-app.use(cors({
-  origin: "*"
-}));
+app.use(cors(corsOptions));
 // Permite receber JSON com limite de tamanho
 app.use(express.json({ limit: '10mb' }));
 // ===============================
@@ -76,9 +99,12 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
 // ===============================
 app.get('/api/', (_req, res) => {
   res.json({
+    success: true,
     message: 'MeetStranger API',
-    version: '2.0.0',
-    status: 'running'
+    data: {
+      version: '2.0.0',
+      status: 'running'
+    }
   });
 });
 // Rotas de autenticação
@@ -91,13 +117,19 @@ app.use('/api/matching', matchingRoutes);
 // HEALTH CHECK
 // ===============================
 // Endpoint para verificar se a API está saudável
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy', // Status da aplicação
-    timestamp: new Date().toISOString(), // Timestamp atual
-    services: {
-      database: 'connected', // Status do banco
-      websocket: 'active'    // Status do WebSocket
+app.get('/api/health', async (req, res) => {
+  const databaseConnected = await database.healthCheck();
+  const healthy = databaseConnected;
+
+  res.status(healthy ? 200 : 503).json({
+    success: healthy,
+    data: {
+      status: healthy ? 'healthy' : 'unhealthy',
+      timestamp: new Date().toISOString(),
+      services: {
+        database: databaseConnected ? 'connected' : 'disconnected',
+        websocket: websocketService.isInitialized() ? 'active' : 'inactive'
+      }
     }
   });
 });
@@ -114,7 +146,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack); // Log do erro no console
   res.status(500).json({
     success: false,
-    message: 'Internal server error'
+    error: 'Internal server error'
   });
 });
 // ===============================
@@ -138,7 +170,7 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(` Server running on port ${PORT}`);
     console.log(` WebSocket server ready`);
     console.log(` API Documentation: http://localhost:${PORT}/docs`);
-    console.log(` Database: SQLite`);
+    console.log(` Database: PostgreSQL`);
   });
 }
 // ===============================

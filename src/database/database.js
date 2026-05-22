@@ -7,11 +7,16 @@ class Database {
 
   async connect() {
     try {
+      if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL is required');
+      }
+
+      const isLocalDatabase = /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
+      const useSsl = process.env.DATABASE_SSL === 'true' || (!isLocalDatabase && process.env.DATABASE_SSL !== 'false');
+
       this.pool = new Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl: {
-          rejectUnauthorized: false
-        }
+        ssl: useSsl ? { rejectUnauthorized: false } : false
       });
 
       // Test connection
@@ -39,7 +44,6 @@ class Database {
       )
     `;
 
-    
     await this.pool.query(createUsersTable);
     console.log('✅ Tables created/verified');
   }
@@ -55,8 +59,18 @@ class Database {
   }
 
   async run(text, params) {
-    const result = await this.pool.query(text + ' RETURNING id', params);
+    const result = await this.pool.query(text, params);
     return { id: result.rows[0]?.id };
+  }
+
+  async healthCheck() {
+    try {
+      if (!this.pool) return false;
+      await this.pool.query('SELECT 1');
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   async close() {

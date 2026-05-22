@@ -1,272 +1,313 @@
 const { v4: uuidv4 } = require('uuid');
 
-// Filas por categoria (em memória para P2P dinâmico)
-const waitingQueues = {
-  jogos: [],
-  series: [],
-  filmes: []
-};
+const CATEGORIES = ['movies', 'gaming', 'music', 'study'];
 
-// Salas ativas: roomId -> room
+const waitingQueues = CATEGORIES.reduce((queues, category) => {
+  queues[category] = [];
+  return queues;
+}, {});
+
 const activeRooms = new Map();
 
-// Controle de sala ativa por usuário: userId -> roomId
-// Garante que 1 usuário = 1 sala ativa no máximo
-const activeUserRooms = new Map();
-
-// Timeout de fila: 5 minutos
-const QUEUE_TIMEOUT_MS = 5 * 60 * 1000;
-
-// Timeout de sala inativa: 10 minutos
-const ROOM_TIMEOUT_MS = 10 * 60 * 1000;
-
 class MatchingService {
-
-  // ─── Fila ─────────────────────────────────────────────────────────────────
+  sameUser(userA, userB) {
+    return String(userA) === String(userB);
+  }
 
   joinQueue(userId, socketId, category) {
-    console.log(`📥 joinQueue called: userId=${userId}, category=${category}`);
 
-    // Remove de todas as filas se já estava em alguma
+    // remove usuário de todas filas anteriores
     this.leaveAllQueues(userId);
 
+    // impede usuário em múltiplas salas
+    const existingRoom = this.getUserRoom(userId);
+
+    if (existingRoom) {
+      return {
+        matched: true,
+        roomId: existingRoom.id,
+        category: existingRoom.category,
+        partnerId:
+          this.sameUser(existingRoom.user1Id, userId)
+            ? existingRoom.user2Id
+            : existingRoom.user1Id,
+
+        partnerSocketId:
+          this.sameUser(existingRoom.user1Id, userId)
+            ? existingRoom.user2SocketId
+            : existingRoom.user1SocketId,
+      };
+    }
+
     const queue = waitingQueues[category];
+
     if (!queue) {
-      console.log(`❌ Invalid category: ${category}`);
       throw new Error('Invalid category');
     }
 
-    // Valida se o usuário já possui sala ativa antes de entrar na fila
-    const existingRoomId = activeUserRooms.get(userId);
-    if (existingRoomId && activeRooms.has(existingRoomId)) {
-      console.log(`⚠️ User ${userId} already has active room ${existingRoomId}`);
-      const room = activeRooms.get(existingRoomId);
+    // impede duplicação na fila
+    const alreadyQueued = queue.find(
+      item => this.sameUser(item.userId, userId)
+    );
+
+    if (alreadyQueued) {
       return {
-        matched: true,
-        roomId: existingRoomId,
-        category: room.category,
-        partnerId: room.user1Id === userId ? room.user2Id : room.user1Id,
-        partnerSocketId: room.user1Id === userId ? room.user2SocketId : room.user1SocketId,
-        alreadyMatched: true
+        matched: false,
+        category,
+        queuePosition:
+          queue.findIndex(
+            q => this.sameUser(q.userId, userId)
+          ) + 1,
+
+        estimatedWait:
+          this.calculateEstimatedWait(
+            queue.length
+          ),
       };
     }
 
-    console.log(`📊 Queue for ${category}:`, queue.length, 'users waiting');
+    // tenta achar parceiro válido
+    while (queue.length > 0) {
 
-    if (queue.length > 0) {
-      // Match encontrado
       const partner = queue.shift();
-      const roomId = uuidv4();
 
-      console.log(`🎯 Match found! Partner: ${partner.userId}, Room: ${roomId}`);
+      // ignora inválidos
+      if (
+        !partner ||
+        this.sameUser(partner.userId, userId) ||
+        partner.socketId === socketId
+      ) {
+        continue;
+      }
+
+      const roomId = uuidv4();
 
       const room = {
         id: roomId,
+
         category,
+
         user1Id: partner.userId,
         user2Id: userId,
+
         user1SocketId: partner.socketId,
         user2SocketId: socketId,
+
         status: 'active',
+
         createdAt: new Date(),
-        lastActivity: new Date()
+
+        // importante para cleanup
+        lastActivity: new Date(),
       };
 
       activeRooms.set(roomId, room);
-      activeUserRooms.set(partner.userId, roomId);
-      activeUserRooms.set(userId, roomId);
 
-      console.log(`🏠 Room created: ${roomId}`);
+      console.log(
+        '[MATCHING] Room created:',
+        roomId
+      );
 
       return {
         matched: true,
         roomId,
         category,
         partnerId: partner.userId,
-        partnerSocketId: partner.socketId
-      };
-    } else {
-      // Adiciona à fila com timestamp para controle de timeout
-      const queueItem = {
-        userId,
-        socketId,
-        category,
-        joinedAt: Date.now()
-      };
-
-      queue.push(queueItem);
-      console.log(`⏳ Added to queue. Position: ${queue.length}`);
-
-      return {
-        matched: false,
-        category,
-        queuePosition: queue.length,
-        estimatedWait: this.calculateEstimatedWait(queue.length)
+        partnerSocketId: partner.socketId,
       };
     }
+
+    // adiciona na fila
+    queue.push({
+      userId,
+      socketId,
+      timestamp: Date.now(),
+    });
+
+    console.log(
+      '[MATCHING] Added to queue:',
+      userId,
+      category
+    );
+
+    return {
+      matched: false,
+      category,
+      queuePosition: queue.length,
+      estimatedWait:
+        this.calculateEstimatedWait(
+          queue.length
+        ),
+    };
   }
 
   leaveQueue(userId, category = null) {
+
     if (category) {
+
       const queue = waitingQueues[category];
-      if (queue) {
-        const index = queue.findIndex(item => item.userId === userId);
-        if (index > -1) {
-          queue.splice(index, 1);
-          return true;
-        }
+
+      if (!queue) {
+        return false;
       }
-    } else {
-      this.leaveAllQueues(userId);
+
+      const index = queue.findIndex(
+        item => this.sameUser(item.userId, userId)
+      );
+
+      if (index === -1) {
+        return false;
+      }
+
+      queue.splice(index, 1);
+
+      return true;
     }
-    return false;
+
+    this.leaveAllQueues(userId);
+
+    return true;
   }
 
   leaveAllQueues(userId) {
-    Object.keys(waitingQueues).forEach(category => {
-      this.leaveQueue(userId, category);
-    });
-  }
 
-  // Retorna usuários na fila que estão além do timeout
-  getExpiredQueueItems() {
-    const now = Date.now();
-    const expired = [];
+    Object.keys(waitingQueues).forEach(
+      category => {
 
-    Object.keys(waitingQueues).forEach(category => {
-      waitingQueues[category].forEach(item => {
-        if (now - item.joinedAt > QUEUE_TIMEOUT_MS) {
-          expired.push({ ...item, category });
+        const queue =
+          waitingQueues[category];
+
+        const index = queue.findIndex(
+          item => this.sameUser(item.userId, userId)
+        );
+
+        if (index > -1) {
+          queue.splice(index, 1);
         }
-      });
-    });
-
-    return expired;
+      }
+    );
   }
-
-  // ─── Salas ────────────────────────────────────────────────────────────────
 
   getRoom(roomId) {
     return activeRooms.get(roomId);
   }
 
   getUserRoom(userId) {
-    const roomId = activeUserRooms.get(userId);
-    if (roomId) return activeRooms.get(roomId) ?? null;
-    return null;
+
+    return Array.from(
+      activeRooms.values()
+    ).find(
+      room =>
+        this.sameUser(room.user1Id, userId) ||
+        this.sameUser(room.user2Id, userId)
+    );
   }
 
-  updateRoomActivity(roomId) {
-    const room = activeRooms.get(roomId);
-    if (room) {
-      room.lastActivity = new Date();
-    }
+  getUserRooms(userId) {
+
+    return Array.from(
+      activeRooms.values()
+    ).filter(
+      room =>
+        this.sameUser(room.user1Id, userId) ||
+        this.sameUser(room.user2Id, userId)
+    );
   }
 
   leaveRoom(roomId, userId) {
-    const room = activeRooms.get(roomId);
-    if (room) {
-      activeRooms.delete(roomId);
-      activeUserRooms.delete(room.user1Id);
-      activeUserRooms.delete(room.user2Id);
 
-      const partnerId = room.user1Id === userId ? room.user2Id : room.user1Id;
-      const partnerSocketId = room.user1Id === userId ? room.user2SocketId : room.user1SocketId;
+    const room =
+      activeRooms.get(roomId);
 
-      return {
-        ...room,
-        partnerId,
-        partnerSocketId,
-        status: 'ended',
-        endedAt: new Date()
-      };
+    if (!room) {
+      return null;
     }
-    return null;
-  }
 
-  // ─── Sessão do usuário ────────────────────────────────────────────────────
+    activeRooms.delete(roomId);
 
-  getSessionState(userId) {
-    const roomId = activeUserRooms.get(userId) ?? null;
-    const room = roomId ? activeRooms.get(roomId) : null;
+    const partnerId =
+      this.sameUser(room.user1Id, userId)
+        ? room.user2Id
+        : room.user1Id;
 
-    // Verifica se está na fila
-    let inQueue = false;
-    let queueCategory = null;
-    Object.keys(waitingQueues).forEach(category => {
-      if (waitingQueues[category].some(item => item.userId === userId)) {
-        inQueue = true;
-        queueCategory = category;
-      }
-    });
+    const partnerSocketId =
+      this.sameUser(room.user1Id, userId)
+        ? room.user2SocketId
+        : room.user1SocketId;
 
     return {
-      inQueue,
-      category: room?.category ?? queueCategory ?? null,
-      currentRoom: roomId && room ? roomId : null
+      ...room,
+
+      partnerId,
+
+      partnerSocketId,
+
+      status: 'ended',
+
+      endedAt: new Date(),
     };
   }
 
-  // ─── Cleanup ──────────────────────────────────────────────────────────────
-
-  cleanupInactiveRooms() {
-    const now = Date.now();
-    const removed = [];
-
-    for (const [roomId, room] of activeRooms.entries()) {
-      const lastActivity = room.lastActivity ?? room.createdAt;
-      if (now - lastActivity.getTime() > ROOM_TIMEOUT_MS) {
-        activeRooms.delete(roomId);
-        activeUserRooms.delete(room.user1Id);
-        activeUserRooms.delete(room.user2Id);
-        removed.push(roomId);
-        console.log(`🧹 Cleaned up inactive room: ${roomId}`);
-      }
-    }
-
-    return removed;
-  }
-
-  cleanupExpiredQueues() {
-    const now = Date.now();
-    const expired = [];
-
-    Object.keys(waitingQueues).forEach(category => {
-      const before = waitingQueues[category].length;
-      waitingQueues[category] = waitingQueues[category].filter(item => {
-        if (now - item.joinedAt > QUEUE_TIMEOUT_MS) {
-          expired.push({ ...item, category });
-          return false;
-        }
-        return true;
-      });
-      const removed = before - waitingQueues[category].length;
-      if (removed > 0) {
-        console.log(`🧹 Removed ${removed} expired queue item(s) from ${category}`);
-      }
-    });
-
-    return expired;
-  }
-
-  // ─── Utilitários ──────────────────────────────────────────────────────────
-
   calculateEstimatedWait(queuePosition) {
-    const avgWaitTime = 15;
-    const estimatedSeconds = queuePosition * avgWaitTime;
+
+    const estimatedSeconds =
+      queuePosition * 15;
+
     return estimatedSeconds < 60
       ? `${estimatedSeconds}s`
-      : `${Math.ceil(estimatedSeconds / 60)}m`;
+      : `${Math.ceil(
+          estimatedSeconds / 60
+        )}m`;
   }
 
   getQueueStats() {
+
     return {
-      jogos: waitingQueues.jogos.length,
-      series: waitingQueues.series.length,
-      filmes: waitingQueues.filmes.length,
-      activeRooms: activeRooms.size
+      movies:
+        waitingQueues.movies.length,
+
+      gaming:
+        waitingQueues.gaming.length,
+
+      music:
+        waitingQueues.music.length,
+
+      study:
+        waitingQueues.study.length,
+
+      activeRooms:
+        activeRooms.size,
     };
+  }
+
+  cleanupInactiveRooms() {
+
+    const now = Date.now();
+
+    const maxInactiveTime =
+      5 * 60 * 1000;
+
+    for (const [roomId, room] of activeRooms.entries()) {
+
+      const lastActivity =
+        room.lastActivity || room.createdAt;
+
+      const inactiveTime =
+        now - lastActivity.getTime();
+
+      if (inactiveTime > maxInactiveTime) {
+
+        console.log(
+          '[MATCHING] Removing inactive room:',
+          roomId
+        );
+
+        activeRooms.delete(roomId);
+      }
+    }
   }
 }
 
 module.exports = new MatchingService();
+
+module.exports.CATEGORIES = CATEGORIES;

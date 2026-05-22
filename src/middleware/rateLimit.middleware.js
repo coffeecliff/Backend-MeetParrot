@@ -5,7 +5,7 @@ const authLimiter = rateLimit({
   max: 20, // 20 requests per minute for testing
   message: {
     success: false,
-    message: 'Too many authentication attempts, please try again later.'
+    error: 'Too many authentication attempts, please try again later.'
   }
 });
 
@@ -14,7 +14,7 @@ const chatLimiter = rateLimit({
   max: 100, // 100 requests per minute
   message: {
     success: false,
-    message: 'Too many requests, please slow down.'
+    error: 'Too many requests, please slow down.'
   }
 });
 
@@ -23,7 +23,7 @@ const messageLimiter = rateLimit({
   max: 10, // 10 messages per minute per room
   message: {
     success: false,
-    message: 'Too many messages, please slow down.'
+    error: 'Too many messages, please slow down.'
   }
 });
 

@@ -3,49 +3,33 @@ const jwt = require('jsonwebtoken');
 const database = require('../database/database');
 
 class AuthService {
-
   async register(username, email, password) {
-    console.log('AuthService.register called with:', { username, email });
-
-    // Check if email exists
     const existingEmail = await database.get(
       'SELECT id FROM users WHERE email = $1',
       [email]
     );
 
     if (existingEmail) {
-      throw new Error('Este email já está em uso');
+      throw new Error('Email is already in use');
     }
 
-    // Check if username exists
     const existingUsername = await database.get(
       'SELECT id FROM users WHERE username = $1',
       [username]
     );
 
     if (existingUsername) {
-      throw new Error('Este nome de usuário já está em uso');
+      throw new Error('Username is already in use');
     }
 
-    // Hash password
     const passwordHash = await bcrypt.hash(password, 10);
-
-    // Create user
-    const query = 'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id';
-    const values = [username, email, passwordHash];
-    
-    console.log('📝 SQL Query:', query);
-    console.log('📝 SQL Values:', values);
-    
-    const result = await database.query(query, values);
+    const result = await database.query(
+      'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id',
+      [username, email, passwordHash]
+    );
     const userId = result[0].id;
 
-    // Generate token
-    const token = jwt.sign(
-      { userId, email },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
-    );
+    const token = this.signToken({ userId, email });
 
     return {
       user: {
@@ -73,16 +57,12 @@ class AuthService {
       throw new Error('Invalid credentials');
     }
 
-    await database.run(
+    await database.query(
       'UPDATE users SET last_login = CURRENT_TIMESTAMP, is_online = TRUE WHERE id = $1',
       [user.id]
     );
 
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
-    );
+    const token = this.signToken({ userId: user.id, email: user.email });
 
     return {
       user: {
@@ -102,9 +82,17 @@ class AuthService {
   }
 
   async setUserOnline(userId, isOnline) {
-    await database.run(
+    await database.query(
       'UPDATE users SET is_online = $1 WHERE id = $2',
       [isOnline, userId]
+    );
+  }
+
+  signToken(payload) {
+    return jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
   }
 }
