@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 
-const CATEGORIES = ['movies', 'gaming', 'music', 'study'];
+const CATEGORIES = ['movies', 'games', 'series', 'books'];
 
 const waitingQueues = CATEGORIES.reduce((queues, category) => {
   queues[category] = [];
@@ -266,14 +266,14 @@ class MatchingService {
       movies:
         waitingQueues.movies.length,
 
-      gaming:
-        waitingQueues.gaming.length,
+      games:
+        waitingQueues.games.length,
 
-      music:
-        waitingQueues.music.length,
+      series:
+        waitingQueues.series.length,
 
-      study:
-        waitingQueues.study.length,
+      books:
+        waitingQueues.books.length,
 
       activeRooms:
         activeRooms.size,

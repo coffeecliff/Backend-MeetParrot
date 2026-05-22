@@ -32,7 +32,7 @@ const schemas = {
   }),
 
   joinQueue: Joi.object({
-    category: Joi.string().valid('movies', 'gaming', 'music', 'study').required()
+    category: Joi.string().valid('movies', 'games', 'series', 'books').required()
   })
 };
 
