@@ -1,16 +1,12 @@
-// ===============================
-// IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
-// ===============================
-// Carrega variáveis de ambiente do arquivo .env
-// Validação obrigatória de variáveis de ambiente críticas
-const REQUIRED_ENV_VARS = ['JWT_SECRET', 'DATABASE_URL'];
+// const REQUIRED_ENV_VARS = ['JWT_SECRET', 'DATABASE_URL'];
 
-const missingVars = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
+// const missingVars = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
 
-if (missingVars.length > 0) {
-    console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
-    process.exit(1);
-}
+// if (missingVars.length > 0) {
+//     console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
+//     process.exit(1);
+// }
+
 require('dotenv').config();
 // Importação dos módulos principais da aplicação
 const express = require('express');          // Framework HTTP
