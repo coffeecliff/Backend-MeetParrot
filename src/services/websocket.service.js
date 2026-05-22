@@ -105,7 +105,11 @@ class WebSocketService {
 
             socket.on(
                 'find-match',
-                async ({ category } = {}) => {
+                async ({ category, avatarId } = {}) => {
+                    // Persiste o avatarId no socket para repassar ao parceiro no match
+                    if (avatarId !== undefined) {
+                        socket.avatarId = String(avatarId);
+                    }
 
                     try {
 
@@ -257,7 +261,7 @@ class WebSocketService {
                             partnerSocket.currentRoom =
                                 result.roomId;
 
-                            // emite match
+                            // emite match — inclui avatarId do parceiro em cada lado
                             socket.emit(
                                 'match-found',
                                 {
@@ -272,6 +276,8 @@ class WebSocketService {
                                             user2
                                                 ?.username ||
                                             'User',
+                                        avatarId:
+                                            partnerSocket.avatarId || '1',
                                     },
                                 }
                             );
@@ -290,6 +296,8 @@ class WebSocketService {
                                             user1
                                                 ?.username ||
                                             'User',
+                                        avatarId:
+                                            socket.avatarId || '1',
                                     },
                                 }
                             );
@@ -752,7 +760,9 @@ class WebSocketService {
                             result.category,
                         partner: {
                             username:
-                                'User',
+                                newPartnerSocket.username || 'User',
+                            avatarId:
+                                newPartnerSocket.avatarId || '1',
                         },
                     }
                 );
@@ -765,7 +775,9 @@ class WebSocketService {
                             result.category,
                         partner: {
                             username:
-                                'User',
+                                partnerSocket.username || 'User',
+                            avatarId:
+                                partnerSocket.avatarId || '1',
                         },
                     }
                 );
